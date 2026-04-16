@@ -65,13 +65,25 @@ export default function HistoricoPage() {
           Nenhum registro encontrado para <span className="font-semibold">@{profile?.username}</span>.
         </p>
         <p className="text-gray-400 text-sm mb-6">Troque de conta no menu superior ou insira dados.</p>
-        <Link
-          href="/inserir"
-          className="flex items-center gap-2 bg-gray-900 text-white px-6 py-3 rounded-xl font-medium hover:bg-gray-800 transition-colors text-sm"
-        >
-          <ArrowUpRight className="w-4 h-4" />
-          Inserir primeiras métricas
-        </Link>
+        {importMsg && (
+          <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${importMsg.includes('sucesso') ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+            {importMsg}
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 border border-gray-200 text-gray-700 px-6 py-3 rounded-xl font-medium hover:bg-gray-50 transition-colors text-sm cursor-pointer">
+            <Upload className="w-4 h-4" />
+            Importar CSV
+            <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
+          </label>
+          <Link
+            href="/inserir"
+            className="flex items-center gap-2 bg-gray-900 text-white px-6 py-3 rounded-xl font-medium hover:bg-gray-800 transition-colors text-sm"
+          >
+            <ArrowUpRight className="w-4 h-4" />
+            Inserir manualmente
+          </Link>
+        </div>
       </div>
     )
   }
