@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, PlusCircle, Clock } from 'lucide-react'
+import { LayoutDashboard, PlusCircle, Clock, FileUp } from 'lucide-react'
 import { ProfileSwitcher } from './ProfileSwitcher'
 
 const links = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/inserir', label: 'Inserir Dados', icon: PlusCircle },
+  { href: '/importar', label: 'Importar Meta', icon: FileUp },
+  { href: '/inserir', label: 'Inserir Manual', icon: PlusCircle },
   { href: '/historico', label: 'Histórico', icon: Clock },
 ]
 
