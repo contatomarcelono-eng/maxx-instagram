@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getMetrics, deleteMetric, exportToCSV, getActiveProfile } from '@/lib/storage'
+import { getMetrics, deleteMetric, exportToCSV, importFromCSV, getActiveProfile } from '@/lib/storage'
 import { MetricEntry, Profile } from '@/types'
-import { Trash2, Download, ArrowUpRight } from 'lucide-react'
+import { Trash2, Download, Upload, ArrowUpRight } from 'lucide-react'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -12,6 +12,7 @@ export default function HistoricoPage() {
   const [metrics, setMetrics] = useState<MetricEntry[]>([])
   const [profile, setProfile] = useState<Profile | undefined>()
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [importMsg, setImportMsg] = useState<string | null>(null)
 
   function load() {
     setMetrics(getMetrics())
@@ -23,6 +24,25 @@ export default function HistoricoPage() {
     window.addEventListener('profile-changed', load)
     return () => window.removeEventListener('profile-changed', load)
   }, [])
+
+  function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string
+      const count = importFromCSV(text)
+      if (count === 0) {
+        setImportMsg('Nenhum dado importado. Verifique se o CSV tem as colunas corretas.')
+      } else {
+        setImportMsg(`${count} registro(s) importado(s) com sucesso!`)
+        load()
+      }
+      setTimeout(() => setImportMsg(null), 4000)
+    }
+    reader.readAsText(file, 'UTF-8')
+    e.target.value = ''
+  }
 
   function handleDelete(id: string) {
     if (confirmDelete === id) {
@@ -70,14 +90,27 @@ export default function HistoricoPage() {
           </div>
           <p className="text-sm text-gray-500 mt-0.5">{metrics.length} registro(s)</p>
         </div>
-        <button
-          onClick={() => exportToCSV(sorted, profile?.username)}
-          className="flex items-center gap-2 border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
-        >
-          <Download className="w-4 h-4" />
-          Exportar CSV
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors cursor-pointer">
+            <Upload className="w-4 h-4" />
+            Importar CSV
+            <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
+          </label>
+          <button
+            onClick={() => exportToCSV(sorted, profile?.username)}
+            className="flex items-center gap-2 border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Exportar CSV
+          </button>
+        </div>
       </div>
+
+      {importMsg && (
+        <div className={`rounded-xl px-4 py-3 text-sm font-medium ${importMsg.includes('sucesso') ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+          {importMsg}
+        </div>
+      )}
 
       <div className="space-y-3">
         {sorted.map((m) => (

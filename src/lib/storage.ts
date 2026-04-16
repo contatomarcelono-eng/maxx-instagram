@@ -132,6 +132,98 @@ export function deleteMetric(id: string): void {
   localStorage.setItem(METRICS_KEY, JSON.stringify(updated))
 }
 
+export function importFromCSV(csvText: string, profileId?: string): number {
+  const id = profileId ?? getActiveProfileId()
+  const lines = csvText.trim().split('\n').filter((l) => l.trim() !== '')
+  if (lines.length < 2) return 0
+
+  const headers = lines[0].split(',').map((h) => h.trim().toLowerCase())
+
+  const col = (...names: string[]) => {
+    for (const name of names) {
+      const idx = headers.findIndex((h) => h.includes(name))
+      if (idx !== -1) return idx
+    }
+    return -1
+  }
+
+  const dateIdx = col('data')
+  const followersIdx = col('seguidores')
+  const reachIdx = col('alcance')
+  const impressionsIdx = col('impressões', 'impressoes', 'impressão', 'impressao')
+  const likesIdx = col('curtidas')
+  const commentsIdx = col('comentários', 'comentarios', 'comentário', 'comentario')
+  const savesIdx = col('salvamentos')
+  const visitsIdx = col('visitas')
+  const postsIdx = col('posts')
+
+  if (dateIdx === -1 || followersIdx === -1) return 0
+
+  const all = getAllMetrics()
+  let count = 0
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map((c) => c.trim())
+    const dateRaw = cols[dateIdx]
+    if (!dateRaw) continue
+
+    // Aceita dd/MM/yyyy ou yyyy-MM-dd
+    let date = dateRaw
+    if (dateRaw.includes('/')) {
+      const p = dateRaw.split('/')
+      if (p.length === 3) {
+        date = p[0].length === 4
+          ? `${p[0]}-${p[1].padStart(2, '0')}-${p[2].padStart(2, '0')}`
+          : `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`
+      }
+    }
+
+    const getNum = (idx: number) => (idx !== -1 ? Number(cols[idx]) || 0 : 0)
+
+    const followers = getNum(followersIdx)
+    const reach = getNum(reachIdx)
+    const impressions = getNum(impressionsIdx)
+    const likes = getNum(likesIdx)
+    const comments = getNum(commentsIdx)
+    const saves = getNum(savesIdx)
+    const profile_visits = getNum(visitsIdx)
+    const posts_published = getNum(postsIdx)
+
+    const profileMetrics = all
+      .filter((m) => m.profile_id === id)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    const previous = profileMetrics[profileMetrics.length - 1]
+    const followers_growth = previous ? followers - previous.followers : 0
+    const total_interactions = likes + comments + saves
+    const engagement_rate =
+      followers > 0 ? parseFloat(((total_interactions / followers) * 100).toFixed(2)) : 0
+
+    const newEntry: MetricEntry = {
+      id: crypto.randomUUID(),
+      profile_id: id,
+      date,
+      followers,
+      reach,
+      impressions,
+      likes,
+      comments,
+      saves,
+      profile_visits,
+      posts_published,
+      followers_growth,
+      engagement_rate,
+      created_at: new Date().toISOString(),
+    }
+
+    all.push(newEntry)
+    count++
+  }
+
+  localStorage.setItem(METRICS_KEY, JSON.stringify(all))
+  return count
+}
+
 export function exportToCSV(metrics: MetricEntry[], username?: string): void {
   const headers = [
     'Data', 'Seguidores', 'Crescimento', 'Alcance', 'Impressões',
