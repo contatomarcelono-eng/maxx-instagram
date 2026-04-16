@@ -211,6 +211,16 @@ export default function ImportarPage() {
                       .join(' · ')}
                   </p>
                 )}
+                {/* Debug info */}
+                <details className="mt-1">
+                  <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">diagnóstico</summary>
+                  <div className="mt-1 text-xs text-gray-500 font-mono bg-white rounded p-2 space-y-0.5">
+                    <p>título: &quot;{f._debug.title}&quot;</p>
+                    <p>colunas: [{f._debug.headers.join(', ')}]</p>
+                    <p>1ª linha: [{f._debug.firstRow.join(', ')}]</p>
+                    <p>col.data: {f._debug.dateCol} · col.valor: {f._debug.primaryIdx}</p>
+                  </div>
+                </details>
               </div>
             </div>
           ))}

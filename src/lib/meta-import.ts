@@ -23,6 +23,13 @@ export interface DetectedFile {
     followers_growth: number
     profile_visits: number
   }>
+  _debug: {
+    title: string
+    headers: string[]
+    firstRow: string[]
+    primaryIdx: number
+    dateCol: number
+  }
 }
 
 const TYPE_LABELS: Record<MetaFileType, string> = {
@@ -40,19 +47,15 @@ function cleanText(text: string): string {
   return text.replace(/^\uFEFF/, '').trim()
 }
 
-function detectSep(line: string): string {
-  const semis = (line.match(/;/g) || []).length
-  const commas = (line.match(/,/g) || []).length
-  return semis > commas ? ';' : ','
-}
-
 function parseNum(s: string): number {
-  if (!s) return 0
-  return Number(s.replace(/"/g, '').replace(/\./g, '').replace(',', '.')) || 0
+  if (!s || !s.trim()) return 0
+  const cleaned = s.replace(/"/g, '').trim()
+  // Handle both "1.234,56" (PT) and "1,234.56" (EN)
+  const num = Number(cleaned.replace(/\./g, '').replace(',', '.'))
+  return isNaN(num) ? 0 : num
 }
 
 function formatDate(raw: string): string {
-  // "2026-04-08T00:00:00" → "08/04/2026"
   const d = raw.replace(/"/g, '').split('T')[0]
   if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
     const [y, m, day] = d.split('-')
@@ -62,51 +65,61 @@ function formatDate(raw: string): string {
 }
 
 function normalize(s: string): string {
-  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
 }
 
-interface ParsedCSV {
+// Meta Business Suite CSV format:
+//   Line 1: sep=,              (optional — skip)
+//   Line 2: "Título da Métrica" (optional single-cell title — capture)
+//   Line 3: "Data","Primary"   (column headers)
+//   Line 4+: data rows
+function parseMetaCSV(text: string): {
   title: string
   headers: string[]
   rows: string[][]
-}
-
-// Meta Business Suite exports CSVs with this structure:
-//   Line 1: sep=,          (separator hint for Excel — skip)
-//   Line 2: "Alcance"      (metric title — single value)
-//   Line 3: "Data","Primary" (actual column headers)
-//   Line 4+: data rows
-function parseMetaCSV(text: string): ParsedCSV {
+  sep: string
+} {
   const lines = cleanText(text)
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
 
   let i = 0
+  let sep = ','
 
-  // Skip "sep=X" line
-  if (lines[i]?.toLowerCase().startsWith('sep=')) i++
+  // Extract separator from "sep=X" line
+  if (lines[i]?.toLowerCase().startsWith('sep=')) {
+    const declared = lines[i].slice(4).trim()
+    if (declared) sep = declared
+    i++
+  } else {
+    // Auto-detect from first meaningful line
+    const sample = lines[i] || ''
+    const semis = (sample.match(/;/g) || []).length
+    const commas = (sample.match(/,/g) || []).length
+    sep = semis > commas ? ';' : ','
+  }
 
-  // Determine separator
-  const sep = detectSep(lines[i] || ',')
   const split = (l: string) => l.split(sep).map((c) => c.trim().replace(/"/g, ''))
 
-  // If current line is a single-value title row, capture it
+  // Check if current line is a single-value title row
   let title = ''
   const firstParts = split(lines[i] || '')
-  if (firstParts.length === 1) {
+  if (firstParts.length === 1 && firstParts[0].length > 0) {
     title = firstParts[0]
     i++
   }
 
   // Headers
-  const headers = split(lines[i] || '').map((h) => normalize(h))
+  const headers = split(lines[i] || '').map(normalize)
   i++
 
-  // Data rows
-  const rows = lines.slice(i).map((l) => split(l))
+  // Data rows (skip empty)
+  const rows = lines.slice(i)
+    .map((l) => split(l))
+    .filter((r) => r.some((c) => c.length > 0))
 
-  return { title, headers, rows }
+  return { title, headers, rows, sep }
 }
 
 function detectType(title: string, filename: string): MetaFileType {
@@ -115,7 +128,7 @@ function detectType(title: string, filename: string): MetaFileType {
 
   if (/seguidor/.test(t) || /seguidor/.test(f)) return 'followers'
   if (/alcance/.test(t) || /alcance/.test(f)) return 'reach'
-  if (/visualiza|impressa|impressao/.test(t) || /visualiza|impressa|impressao/.test(f)) return 'impressions'
+  if (/visualiza|impressa|impressao|viewer/.test(t) || /visualiza|impressa|impressao/.test(f)) return 'impressions'
   if (/visita/.test(t) || /visita/.test(f)) return 'profile_visits'
   if (/clique/.test(t) || /clique/.test(f)) return 'link_clicks'
   if (/intera/.test(t) || /intera/.test(f)) return 'interactions'
@@ -128,39 +141,45 @@ export function detectAndParse(text: string, filename: string): DetectedFile {
   const { title, headers, rows } = parseMetaCSV(text)
   const type = detectType(title, filename)
 
+  // Find date column — use includes for robustness
+  const dateCol = headers.findIndex((h) => h.includes('data') || h === 'date')
+
+  // Find value column — Meta uses "primary" as the default column name
+  const primaryIdx = headers.findIndex((h) => h === 'primary')
+
+  // Best value column: primary > first non-date column > column 1 fallback
+  const valueCol =
+    primaryIdx !== -1
+      ? primaryIdx
+      : dateCol !== -1
+        ? headers.findIndex((_, i) => i !== dateCol)
+        : 1  // fallback: column index 1
+
   // Date range
-  const dateCol = headers.findIndex((h) => h === 'data' || h === 'date')
   const dates = dateCol !== -1 ? rows.map((r) => r[dateCol]).filter(Boolean) : []
   const dateRange =
     dates.length > 0
       ? `${formatDate(dates[0])} a ${formatDate(dates[dates.length - 1])}`
       : '—'
 
-  // Meta uses "Primary" as the default value column name
-  const primaryIdx = headers.findIndex((h) => h === 'primary')
-  const firstValueCol =
-    primaryIdx !== -1
-      ? primaryIdx
-      : headers.findIndex((_, i) => i !== dateCol)
-
   const sumCol = (idx: number) =>
-    idx !== -1 ? rows.reduce((acc, r) => acc + parseNum(r[idx] ?? ''), 0) : 0
+    idx >= 0 ? rows.reduce((acc, r) => acc + parseNum(r[idx] ?? ''), 0) : 0
 
   const colIdx = (...terms: string[]) =>
-    headers.findIndex((h) => terms.some((t) => h.includes(t)))
+    headers.findIndex((h) => terms.some((t) => normalize(h).includes(t)))
 
   const values: DetectedFile['values'] = {}
 
   if (type === 'impressions') {
-    values.impressions = sumCol(firstValueCol)
+    values.impressions = sumCol(valueCol)
   }
 
   if (type === 'reach') {
-    values.reach = sumCol(firstValueCol)
+    values.reach = sumCol(valueCol)
   }
 
   if (type === 'profile_visits') {
-    values.profile_visits = sumCol(firstValueCol)
+    values.profile_visits = sumCol(valueCol)
   }
 
   if (type === 'interactions') {
@@ -173,13 +192,12 @@ export function detectAndParse(text: string, filename: string): DetectedFile {
       if (commentsIdx !== -1) values.comments = sumCol(commentsIdx)
       if (savesIdx !== -1) values.saves = sumCol(savesIdx)
     } else {
-      // Only total available — store as likes
-      values.likes = sumCol(firstValueCol)
+      values.likes = sumCol(valueCol)
     }
   }
 
   if (type === 'followers') {
-    values.followers_growth = sumCol(firstValueCol)
+    values.followers_growth = sumCol(valueCol)
   }
 
   return {
@@ -189,6 +207,13 @@ export function detectAndParse(text: string, filename: string): DetectedFile {
     rows: rows.length,
     dateRange,
     values,
+    _debug: {
+      title,
+      headers,
+      firstRow: rows[0] ?? [],
+      primaryIdx,
+      dateCol,
+    },
   }
 }
 
