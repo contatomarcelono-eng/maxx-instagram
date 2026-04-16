@@ -8,6 +8,7 @@ import { EngagementChart } from '@/components/EngagementChart'
 import { ReachChart } from '@/components/ReachChart'
 import { MetricEntry, Profile } from '@/types'
 import { getMetrics, getActiveProfile } from '@/lib/storage'
+import { InsightsCard } from '@/components/InsightsCard'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -147,6 +148,8 @@ export default function DashboardPage() {
       </div>
 
       <EngagementChart data={metrics} />
+
+      <InsightsCard metrics={metrics} />
 
       {metrics.length >= 2 && (
         <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-5">
